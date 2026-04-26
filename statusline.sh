@@ -1,5 +1,5 @@
 #!/bin/bash
-# Claude Code StatusLine v2.2.0 — Catppuccin Mocha 双行布局
+# Claude Code StatusLine v2.3.0 — Catppuccin Mocha 双行布局
 #
 # 环境变量（均有默认值，无需配置即可使用）：
 #   CC_SL_LINES=1|2          单行/双行（默认 2）
@@ -8,31 +8,65 @@
 #   CC_SL_SHOW_VIM=0         不显示 Vim 模式徽章
 #   CC_SL_SHOW_AGENT=0       不显示 Agent 徽章
 #   CC_SL_SHOW_EFFORT=0      不显示 Effort 徽章
-#   CC_SL_RL_WARN_PCT=60     速率限制黄色阈值
-#   CC_SL_RL_DANGER_PCT=85   速率限制红色阈值
+#   CC_SL_SHOW_CTX_TOKENS=1  显示上下文 token 用量（如 106k/200k）
+#   CC_SL_RL_WARN_PCT=60     速率限制/上下文黄色阈值
+#   CC_SL_RL_DANGER_PCT=85   速率限制/上下文红色阈值
 #   CC_SL_PACE_THRESHOLD=5   Pace delta 最小显示幅度（百分点）
+#   CC_SL_PATH_DEPTH=1       保留路径末尾几段完整显示（默认 1）
 #   CC_SL_DEBUG=1            将原始 JSON payload 写入 /tmp/statusline-debug.json
 
-VERSION="2.2.0"
+VERSION="2.3.0"
 [ "${1:-}" = "--version" ] && echo "statusline v${VERSION}" && exit 0
 
 input=$(cat)
-
-# Debug 模式：捕获真实 Claude Code payload 便于排查
 [ "${CC_SL_DEBUG:-0}" = "1" ] && echo "$input" > /tmp/statusline-debug.json
 
-# ── Catppuccin Mocha 配色（Truecolor ANSI） ──
-Mauve='\033[38;2;203;166;247m'    # 模型名
-Blue='\033[38;2;137;180;250m'     # 项目名
-Yellow='\033[38;2;249;226;175m'   # Git 分支 / 警告
-Green='\033[38;2;166;227;161m'    # 正常 / 新增行
-Red='\033[38;2;243;139;168m'      # 危险 / 删除行
-Lavender='\033[38;2;180;190;254m' # 时长
-Teal='\033[38;2;148;226;213m'     # 费用
-Sapphire='\033[38;2;116;199;236m' # 上下文 %
-Peach='\033[38;2;250;179;135m'    # 速率限制（正常区间）
-Pink='\033[38;2;245;194;231m'     # Vim VISUAL 模式
-Surface2='\033[38;2;88;91;112m'   # 分隔符 / 次要文字
+# ── Truecolor 自动检测 ──
+# 默认开启 truecolor（Claude Code 内置 Electron renderer 始终支持）。
+# 仅在明确检测到不支持的环境时降级为 256 色，避免错误降级破坏体验。
+_use_truecolor() {
+  # 显式声明 truecolor 的终端
+  case "${COLORTERM:-}" in
+    truecolor|24bit) return 0 ;;
+  esac
+  # 已知支持 truecolor 的 TERM_PROGRAM
+  case "${TERM_PROGRAM:-}" in
+    iTerm.app|vscode|WezTerm|Hyper|Cursor) return 0 ;;
+  esac
+  # Apple Terminal（macOS Sonoma 之前）明确不支持 truecolor
+  [ "${TERM_PROGRAM:-}" = "Apple_Terminal" ] && return 1
+  # 默认：假设支持 truecolor（Claude Code 内置渲染器）
+  return 0
+}
+
+if _use_truecolor; then
+  # ── Catppuccin Mocha 配色（24 位 Truecolor ANSI）──
+  Mauve='\033[38;2;203;166;247m'    # 模型名
+  Blue='\033[38;2;137;180;250m'     # 项目名
+  Yellow='\033[38;2;249;226;175m'   # Git 分支 / 警告
+  Green='\033[38;2;166;227;161m'    # 正常 / 新增行
+  Red='\033[38;2;243;139;168m'      # 危险 / 删除行
+  Lavender='\033[38;2;180;190;254m' # 时长
+  Teal='\033[38;2;148;226;213m'     # 费用
+  Sapphire='\033[38;2;116;199;236m' # 上下文 %
+  Peach='\033[38;2;250;179;135m'    # 速率限制（正常区间）
+  Pink='\033[38;2;245;194;231m'     # Vim VISUAL 模式
+  Surface2='\033[38;2;88;91;112m'   # 分隔符 / 次要文字
+else
+  # ── Catppuccin Mocha 配色（256 色降级，最接近近似值）──
+  # 降级映射：每个颜色通过 xterm-256 6×6×6 色块计算最近邻
+  Mauve='\033[38;5;183m'    # #d7afd7 ≈ Mauve
+  Blue='\033[38;5;111m'     # #87afff ≈ Blue
+  Yellow='\033[38;5;223m'   # #ffd7af ≈ Yellow
+  Green='\033[38;5;151m'    # #afd7af ≈ Green
+  Red='\033[38;5;211m'      # #ff87af ≈ Red
+  Lavender='\033[38;5;147m' # #afafff ≈ Lavender
+  Teal='\033[38;5;116m'     # #87d7d7 ≈ Teal
+  Sapphire='\033[38;5;117m' # #87d7ff ≈ Sapphire
+  Peach='\033[38;5;216m'    # #ffaf87 ≈ Peach
+  Pink='\033[38;5;218m'     # #ffafd7 ≈ Pink
+  Surface2='\033[38;5;60m'  # #5f5f87 ≈ Surface2
+fi
 RESET='\033[0m'
 SEP="${Surface2}│${RESET}"
 
@@ -43,18 +77,20 @@ SHOW_RESET=${CC_SL_SHOW_RESET:-1}
 SHOW_VIM=${CC_SL_SHOW_VIM:-1}
 SHOW_AGENT=${CC_SL_SHOW_AGENT:-1}
 SHOW_EFFORT=${CC_SL_SHOW_EFFORT:-1}
+SHOW_CTX_TOKENS=${CC_SL_SHOW_CTX_TOKENS:-1}
 RL_WARN=${CC_SL_RL_WARN_PCT:-60}
 RL_DANGER=${CC_SL_RL_DANGER_PCT:-85}
 PACE_THRESHOLD=${CC_SL_PACE_THRESHOLD:-5}
+PATH_DEPTH=${CC_SL_PATH_DEPTH:-1}
 
 # ── 单次 jq 调用提取全部字段（每字段一行，无需分隔符）──
-# 用逗号表达式让 jq 每字段输出一行，bash 用多个 read 逐行读取。
-# 此方案完全避免 IFS/分隔符问题，天然 bash 3.2 兼容。
-# floor 应用于所有整数字段，防止 JSON 浮点精度问题透传到显示层。
+# jq 逗号表达式逐行输出，bash 多个 read 逐行读取。
+# 完全避免 IFS/分隔符问题，天然 bash 3.2 兼容。
 {
   IFS= read -r MODEL
   IFS= read -r DIR
   IFS= read -r CTX_PCT
+  IFS= read -r CTX_SIZE
   IFS= read -r RL5H
   IFS= read -r RL5H_RESET
   IFS= read -r RL7D
@@ -70,7 +106,8 @@ PACE_THRESHOLD=${CC_SL_PACE_THRESHOLD:-5}
 } < <(echo "$input" | jq -r '
   (.model.display_name // "Unknown"),
   (.workspace.current_dir // ""),
-  ((.context_window.used_percentage // 0) | floor | tostring),
+  ((.context_window.used_percentage   // 0) | floor | tostring),
+  ((.context_window.context_window_size // 0) | floor | tostring),
   ((.rate_limits.five_hour.used_percentage  // "") | if type == "number" then floor | tostring else . end),
   ((.rate_limits.five_hour.resets_at        // 0)  | floor | tostring),
   ((.rate_limits.seven_day.used_percentage  // "") | if type == "number" then floor | tostring else . end),
@@ -85,22 +122,29 @@ PACE_THRESHOLD=${CC_SL_PACE_THRESHOLD:-5}
   (.worktree.name // "")')
 
 # ── resets_at 时间戳单位自适应（秒 or 毫秒）──
-# Claude Code 某些版本以毫秒发送 resets_at（13位数），需除以 1000 转换为秒
 _to_epoch_secs() {
   local ts="${1:-0}"
-  # 13位及以上视为毫秒（2001年后的毫秒时间戳均 > 1e12）
-  if [ "${#ts}" -ge 13 ] 2>/dev/null; then
-    echo $(( ts / 1000 ))
+  [ "${#ts}" -ge 13 ] 2>/dev/null && echo $(( ts / 1000 )) || echo "$ts"
+}
+
+# ── Token 数量格式化（k / M 单位）──
+_fmt_tokens() {
+  local n="${1:-0}"
+  if [ "$n" -ge 1000000 ] 2>/dev/null; then
+    # M 单位：保留 1 位小数（用 bc 做浮点）
+    printf "%.1fM" "$(echo "scale=2; $n/1000000" | bc -l 2>/dev/null || echo 0)"
+  elif [ "$n" -ge 1000 ] 2>/dev/null; then
+    echo "$(( n / 1000 ))k"
   else
-    echo "$ts"
+    echo "${n}"
   fi
 }
 
 # ── 上下文进度条（阈值变色） ──
 CTX_PCT_INT=${CTX_PCT%%.*}
 CTX_PCT_INT=${CTX_PCT_INT:-0}
-if   [ "$CTX_PCT_INT" -ge 90 ] 2>/dev/null; then CTX_BAR_COLOR="$Red"
-elif [ "$CTX_PCT_INT" -ge 70 ] 2>/dev/null; then CTX_BAR_COLOR="$Yellow"
+if   [ "$CTX_PCT_INT" -ge "$RL_DANGER" ] 2>/dev/null; then CTX_BAR_COLOR="$Red"
+elif [ "$CTX_PCT_INT" -ge "$RL_WARN"   ] 2>/dev/null; then CTX_BAR_COLOR="$Yellow"
 else CTX_BAR_COLOR="$Green"
 fi
 FILLED=$(( (CTX_PCT_INT + 9) / 10 ))
@@ -108,6 +152,19 @@ FILLED=$(( (CTX_PCT_INT + 9) / 10 ))
 EMPTY=$((10 - FILLED))
 printf -v FILL_STR "%${FILLED}s"; printf -v PAD_STR "%${EMPTY}s"
 CTX_BAR="${FILL_STR// /█}${PAD_STR// /░}"
+
+# ── 上下文 Token 数量（可选显示）──
+CTX_TOKEN_DETAIL=""
+if [ "$SHOW_CTX_TOKENS" = "1" ] && [ "${CTX_SIZE:-0}" -gt 0 ] 2>/dev/null; then
+  USED_TOKENS=$(( CTX_SIZE * CTX_PCT_INT / 100 ))
+  USED_FMT=$(_fmt_tokens "$USED_TOKENS")
+  SIZE_FMT=$(_fmt_tokens "$CTX_SIZE")
+  CTX_TOKEN_DETAIL=" ${Surface2}(${USED_FMT}/${SIZE_FMT})${RESET}"
+fi
+
+# ── 1M 上下文模型徽章 ──
+MODEL_1M=""
+[ "${CTX_SIZE:-0}" -ge 1000000 ] 2>/dev/null && MODEL_1M=" ${Surface2}·1M${RESET}"
 
 # ── 速率限制颜色（内联，避免子进程） ──
 _rl_color() {
@@ -124,9 +181,6 @@ if [ -n "$RL5H" ] && [ "$RL5H" != "null" ] && [ "$RL5H" != "" ]; then
   RL5H_INT=${RL5H%%.*}
   RL5H_COLOR=$(_rl_color "$RL5H_INT")
 
-  # Pace delta: 判断消耗速度是否超前/落后于均匀时间线
-  # delta = used_pct - (elapsed / 18000) * 100
-  # 正值 ⇡ 红（烧得过快），负值 ⇣ 绿（有余量），|delta| < THRESHOLD 不显示
   PACE_DISPLAY=""
   if [ "$SHOW_PACE" = "1" ] && [ -n "$RL5H_RESET" ] && [ "$RL5H_RESET" != "0" ]; then
     NOW=$(date +%s)
@@ -146,7 +200,6 @@ if [ -n "$RL5H" ] && [ "$RL5H" != "null" ] && [ "$RL5H" != "" ]; then
     fi
   fi
 
-  # 重置倒计时（从 resets_at 减当前时间）
   RESET_COUNTDOWN=""
   if [ "$SHOW_RESET" = "1" ] && [ -n "$RL5H_RESET" ] && [ "$RL5H_RESET" != "0" ]; then
     NOW=$(date +%s)
@@ -207,12 +260,14 @@ fi
 
 IFS='|' read -r BRANCH STAGED MODIFIED < "$CACHE_FILE"
 
-# ── Starship 风格路径缩略（中间各段取首字母，最后一段保留完整） ──
-# /Users/wenbin/mycode/claude-code-statusline-mocha → ~/m/claude-code-statusline-mocha
-# 注意：不能用 ${var/#$HOME/~}，因为 $HOME 含 / 会被 bash 解析为分隔符
-#       改用 ${var#$HOME} 做前缀移除，再手动拼接 ~
+# ── Starship 风格路径缩略 ──
+# CC_SL_PATH_DEPTH 控制末尾几段保留完整（默认 1）
+# /Users/wenbin/mycode/jupyter/007/project → ~/m/j/0/project (depth=1)
+#                                           → ~/m/j/007/project (depth=2)
+# 注意：不能用 ${var/#$HOME/~}（bash 分隔符解析 bug），用 ${var#$HOME} 代替
 _abbrev_path() {
   local full="$1"
+  local depth="${PATH_DEPTH:-1}"
   local stripped="${full#$HOME}"
   local path
   [ "$stripped" != "$full" ] && path="~${stripped}" || path="$full"
@@ -223,14 +278,15 @@ _abbrev_path() {
     return
   fi
 
-  printf '%s' "$path" | awk -F/ '{
+  printf '%s' "$path" | awk -v depth="$depth" -F/ '{
     n = NF
     for (i=1; i<=n; i++) {
       seg = $i
-      if      (i==1) printf "%s",  seg
-      else if (i==n) printf "/%s", seg
-      else if (seg)  printf "/%s", substr(seg,1,1)
-      else           printf "/"
+      keep = (n - i) < depth
+      if      (i==1)   printf "%s",  seg
+      else if (keep)   printf "/%s", seg
+      else if (seg)    printf "/%s", substr(seg,1,1)
+      else             printf "/"
     }
     printf "\n"
   }'
@@ -248,7 +304,7 @@ if [ -n "$BRANCH" ]; then
   [ "$MODIFIED" -gt 0 ] 2>/dev/null && GIT_SECTION="${GIT_SECTION} ${Yellow}~${MODIFIED}${RESET}"
 fi
 
-# ── Worktree 徽章（仅 worktree 会话） ──
+# ── Worktree 徽章 ──
 WORKTREE_BADGE=""
 if [ "$IS_WORKTREE" = "1" ] && [ -n "$WORKTREE_NAME" ] && [ "$WORKTREE_NAME" != "null" ]; then
   WT="${WORKTREE_NAME:0:12}"
@@ -285,18 +341,16 @@ if [ "$SHOW_EFFORT" = "1" ]; then
   esac
 fi
 
-# ── 代码量统计（仅有改动时显示） ──
+# ── 代码量统计 ──
 CODE_STAT=""
 if [ "${LINES_ADDED:-0}" -gt 0 ] 2>/dev/null || [ "${LINES_REMOVED:-0}" -gt 0 ] 2>/dev/null; then
   CODE_STAT=" ${SEP} ${Green}+${LINES_ADDED}${RESET}${Surface2}/${RESET}${Red}-${LINES_REMOVED}${RESET}"
 fi
 
-# ── 行组装 ──
-# 字段顺序：模型 → 配额(最重要) → 上下文 → 时长 → 费用
-LINE1="${Mauve}${MODEL}${RESET}${RL5H_SECTION}${RL7D_SECTION} ${SEP} ${CTX_BAR_COLOR}${CTX_BAR}${RESET} ${Sapphire}${CTX_PCT_INT}%${RESET} ${SEP} ${Lavender}${MINS}m${SECS}s${RESET}${COST_SECTION}"
+# ── 行组装（字段顺序：模型 → 配额 → 上下文 → 时长 → 费用）──
+LINE1="${Mauve}${MODEL}${RESET}${MODEL_1M}${RL5H_SECTION}${RL7D_SECTION} ${SEP} ${CTX_BAR_COLOR}${CTX_BAR}${RESET} ${Sapphire}${CTX_PCT_INT}%${RESET}${CTX_TOKEN_DETAIL} ${SEP} ${Lavender}${MINS}m${SECS}s${RESET}${COST_SECTION}"
 LINE2="${Blue}${ABBREV_PATH}${RESET}${GIT_SECTION}${WORKTREE_BADGE}${AGENT_BADGE}${VIM_BADGE}${EFFORT_BADGE}${CODE_STAT}"
 
-# ── 输出：CC_SL_LINES=1 → 单行，默认 2 → 双行 ──
 if [ "$SL_LINES" = "1" ]; then
   echo -e "${LINE1} ${SEP} ${Blue}${ABBREV_PATH}${RESET}${GIT_SECTION}"
 else

@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.3.0] - 2026-04-26
+
+### Added
+- **Context token count** (`CC_SL_SHOW_CTX_TOKENS=1`, default on): shows actual token usage in human-readable units after the percentage — `53% (106k/200k)` for 200k context, `53% (530k/1.0M)` for 1M context
+- **1M context model badge**: `·1M` suffix after model name when `context_window_size ≥ 1,000,000` (e.g., `Opus 4.7 ·1M`)
+- **Truecolor auto-detection + 256-color fallback**: detects `$COLORTERM=truecolor/24bit` and `$TERM_PROGRAM`; falls back to nearest xterm-256 palette when truecolor is not available (e.g., macOS Terminal.app before Sonoma). Defaults to truecolor since Claude Code's built-in Electron renderer always supports it.
+- **`CC_SL_PATH_DEPTH`** (default `1`): controls how many trailing path segments to show in full. `depth=1` gives `~/m/j/project`; `depth=2` gives `~/m/j/analysis/project`; `depth=3` gives `~/m/jupyter/analysis/project`.
+
+### Changed
+- jq extraction now reads 16 fields (added `context_window_size` as field 4)
+- Context bar color thresholds now respect `CC_SL_RL_WARN_PCT` / `CC_SL_RL_DANGER_PCT` (was hardcoded 70/90)
+
 ## [2.2.0] - 2026-04-26
 
 ### Changed

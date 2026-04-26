@@ -3,8 +3,14 @@
 A dual-line status bar for [Claude Code](https://claude.ai/code) that shows real-time session metrics, quota pace, and project context — all in the [Catppuccin Mocha](https://github.com/catppuccin/catppuccin) color palette.
 
 ```
-Sonnet 4.6 │ ↑5h:36% ⇣24p% (重置 2h0m) │ ↑7d:12% │ ██████░░░░ 53% │ 38m50s │ $2.05
+Sonnet 4.6 │ ↑5h:36% ⇣24p% (重置 2h0m) │ ↑7d:12% │ ██████░░░░ 53% (106k/200k) │ 38m50s │ $2.05
 ~/m/claude-code-statusline-mocha │ main +3 ~15 │ ⚡reviewer │ vim:INSERT │ effort:high │ +57/-10
+```
+
+1M context model:
+```
+Opus 4.7 ·1M │ ↑5h:36% ⇣24p% (重置 2h0m) │ ██████░░░░ 53% (530k/1.0M) │ 38m50s │ $8.50
+~/m/claude-code-statusline-mocha │ main
 ```
 
 > **How it works:** Claude Code pipes a JSON payload to `~/.claude/statusline.sh` on every refresh. The script parses all 15 fields in a single `jq` call, builds two lines with Catppuccin Mocha 24-bit colors, and writes them to stdout. Claude Code renders them in its built-in terminal view. Your `.zshrc`, Starship, oh-my-zsh, and other shell config have zero effect on this script.
@@ -16,21 +22,23 @@ Sonnet 4.6 │ ↑5h:36% ⇣24p% (重置 2h0m) │ ↑7d:12% │ █████
 ### Line 1 — Runtime Metrics
 
 ```
- Sonnet 4.6 │ ↑5h:36% ⇣24p% (重置 2h0m) │ ↑7d:12% │ ██████░░░░ 53% │ 38m50s │ $2.05
-     ①           ②       ③        ④          ⑤           ⑥        ⑦      ⑧       ⑨
+ Sonnet 4.6 ·1M │ ↑5h:36% ⇣24p% (重置 2h0m) │ ↑7d:12% │ ██████░░░░ 53% (106k/200k) │ 38m50s │ $2.05
+     ①      ②       ③       ④        ⑤          ⑥           ⑦        ⑧        ⑨              ⑩       ⑪
 ```
 
 | # | Example | What it means | Always shown? |
 |---|---------|---------------|:---:|
 | ① | `Sonnet 4.6` | **Model name** — which Claude model is active | Yes |
-| ② | `↑5h:36%` | **5-hour quota used** — percentage of your 5h rolling token budget consumed | Only when data available |
-| ③ | `⇣24p%` / `⇡24p%` | **Pace delta** — ⇣ green means you're 24 points *under* sustainable pace (quota will last); ⇡ red means 24 points *over* (may run out early) | Only when |delta| ≥ 5pp |
-| ④ | `(重置 2h0m)` | **Reset countdown** — time until the 5h window resets and quota refreshes | Only when quota data available |
-| ⑤ | `↑7d:12%` | **7-day quota used** — percentage of your weekly token budget | Only when data available |
-| ⑥ | `██████░░░░` | **Context window bar** — 10 blocks showing how full the current conversation is; color changes green→yellow→red as it fills | Yes |
-| ⑦ | `53%` | **Context percentage** — exact number for the bar above | Yes |
-| ⑧ | `38m50s` | **Session duration** — wall-clock time since Claude Code started | Yes |
-| ⑨ | `$2.05` | **Accumulated cost** — total API cost for this session | Only when > $0.00 |
+| ② | `·1M` | **Large context badge** — shown when `context_window_size ≥ 1,000,000` tokens | Only for 1M+ models |
+| ③ | `↑5h:36%` | **5-hour quota used** — percentage of your 5h rolling token budget consumed | Only when data available |
+| ④ | `⇣24p%` / `⇡24p%` | **Pace delta** — ⇣ green: 24 points *under* sustainable pace (quota will last); ⇡ red: 24 points *over* (may run out early) | Only when \|delta\| ≥ 5pp |
+| ⑤ | `(重置 2h0m)` | **Reset countdown** — time until the 5h window resets and quota refreshes | Only when quota data available |
+| ⑥ | `↑7d:12%` | **7-day quota used** — percentage of your weekly token budget | Only when data available |
+| ⑦ | `██████░░░░` | **Context window bar** — 10 blocks showing how full the current conversation is | Yes |
+| ⑧ | `53%` | **Context percentage** — percentage of the context window used | Yes |
+| ⑨ | `(106k/200k)` | **Context token count** — actual tokens used / total in human-readable units (k / M); `530k/1.0M` for 1M models | Only when size data available |
+| ⑩ | `38m50s` | **Session duration** — wall-clock time since Claude Code started | Yes |
+| ⑪ | `$2.05` | **Accumulated cost** — total API cost; hidden when $0.00 | Only when > $0.00 |
 
 **Context bar color thresholds** (configurable):
 
@@ -97,7 +105,8 @@ delta = used% − (elapsed_seconds / 18000) × 100
 | **Pace delta `⇡/⇣`** | Shows if quota is burning faster (⇡ red) or slower (⇣ green) than the sustainable rate |
 | **Reset countdown** | Time until 5h window resets: `(重置 2h30m)` |
 | **7-day rate limit** | Second rate-limit tier displayed alongside 5h |
-| **Context bar** | `██████░░░░ 53%` with green/yellow/red thresholds |
+| **Context bar** | `██████░░░░ 53% (106k/200k)` — bar + percentage + actual token count in k/M units |
+| **1M model badge** | `·1M` suffix when `context_window_size ≥ 1,000,000` |
 | **Vim mode** | INSERT (green) · VISUAL (pink) · NORMAL (yellow) |
 | **Agent badge** | `⚡agent-name` when running with `--agent` |
 | **Effort badge** | `effort:high/xhigh/max` |
@@ -105,6 +114,7 @@ delta = used% − (elapsed_seconds / 18000) × 100
 | **Single-line mode** | `CC_SL_LINES=1` for narrow terminals |
 | **Gemini banner** | Live quota display on `g` alias |
 | **Codex banner** | Cached quota display on `cx` alias |
+| **Truecolor auto-detection** | Falls back to nearest xterm-256 palette when 24-bit color not supported |
 | **~5ms execution** | Single `jq` call; multi-line output avoids all IFS/delimiter issues |
 
 ---
@@ -178,9 +188,11 @@ cx() { ~/.claude/codex-banner.sh; codex "$@"; }
 | `CC_SL_SHOW_VIM` | `1` | `0` = hide Vim mode badge |
 | `CC_SL_SHOW_AGENT` | `1` | `0` = hide Agent badge |
 | `CC_SL_SHOW_EFFORT` | `1` | `0` = hide Effort badge |
+| `CC_SL_SHOW_CTX_TOKENS` | `1` | `0` = hide context token count `(106k/200k)`; `1` = show |
 | `CC_SL_RL_WARN_PCT` | `60` | Yellow threshold for context bar and rate limits |
 | `CC_SL_RL_DANGER_PCT` | `85` | Red threshold |
-| `CC_SL_PACE_THRESHOLD` | `5` | Minimum |delta| in percentage points to show pace indicator |
+| `CC_SL_PACE_THRESHOLD` | `5` | Minimum \|delta\| in percentage points to show pace indicator |
+| `CC_SL_PATH_DEPTH` | `1` | Trailing path segments to show in full: `1`→`~/m/j/project`, `2`→`~/m/j/analysis/project` |
 | `CC_SL_DEBUG` | `0` | `1` = write raw Claude Code JSON payload to `/tmp/statusline-debug.json` |
 
 ```bash

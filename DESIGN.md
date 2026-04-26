@@ -351,7 +351,27 @@ The script makes **no attempt to detect terminal capabilities** and has **no 256
 - VS Code / Cursor / JetBrains integrated terminals: truecolor support built-in
 - Windows Terminal: truecolor support since 2019
 
-**Future fix (P3):** Detect `$COLORTERM=truecolor` or `$TERM_PROGRAM` and emit 256-color escape codes (`\033[38;5;Nm`) when 24-bit is not supported.
+### 256-Color Fallback Palette (v2.3.0)
+
+When truecolor is not available, the script emits `\033[38;5;Nm` (xterm-256) escape codes using nearest-neighbor mapping from the 6×6×6 color cube (indices 16–231):
+
+| Color | Truecolor | xterm-256 index | Approx hex |
+|-------|-----------|:---:|---------|
+| Mauve | `#cba6f7` | 183 | `#d7afd7` |
+| Blue | `#89b4fa` | 111 | `#87afff` |
+| Yellow | `#f9e2af` | 223 | `#ffd7af` |
+| Green | `#a6e3a1` | 151 | `#afd7af` |
+| Red | `#f38ba8` | 211 | `#ff87af` |
+| Lavender | `#b4befe` | 147 | `#afafff` |
+| Teal | `#94e2d5` | 116 | `#87d7d7` |
+| Sapphire | `#74c7ec` | 117 | `#87d7ff` |
+| Peach | `#fab387` | 216 | `#ffaf87` |
+| Pink | `#f5c2e7` | 218 | `#ffafd7` |
+| Surface2 | `#585b70` | 60 | `#5f5f87` |
+
+**Mapping formula:** For each RGB component, find the nearest value in `{0, 95, 135, 175, 215, 255}` to get index 0–5. Then `cube_index = 16 + 36*r + 6*g + b`.
+
+**Detection logic:** The script defaults to truecolor (safe for Claude Code's Electron renderer). It falls back to 256-color only when `$TERM_PROGRAM=Apple_Terminal` (confirmed no truecolor). Explicit `$COLORTERM=truecolor/24bit` always forces truecolor even on Apple Terminal.
 
 ---
 
@@ -868,24 +888,24 @@ The `context_window.context_window_size` field is available in the JSON payload 
 
 ## 14. Pending Optimization Backlog
 
-### P2 — In Progress
+### P2 — In Progress / Done
 
 | Item | Status | Notes |
 |------|--------|-------|
-| GitHub repository structure | ✅ Done | v2.1.0 released |
-| Conventional Commits history | ✅ Done | 3 commits + tags |
-| Screenshots/GIF in README | ❌ Not done | Need terminal recording |
-| GitHub Release with `.sh` assets | ❌ Not done | v2.1.0 tag exists; Release page not created |
+| GitHub repository structure | ✅ Done | v2.3.0 released |
+| Conventional Commits history | ✅ Done | |
+| GitHub Release with `.sh` assets | ✅ Done | v2.2.0 release with attached scripts |
+| Screenshots/GIF in README | ❌ Not done | Need `vhs` or `asciinema` |
 
-### P3 — Planned
+### P3 — Status
 
-| Item | Value | Complexity | Blocking? |
-|------|-------|------------|-----------|
-| **Truecolor detection + 256-color fallback** | High — users on pre-truecolor terminals see degraded colors | Medium — detect `$COLORTERM`, provide 256-color palette | No |
-| **1M context model detection** | Low — visual indicator for large-context models | Low — read `context_window.context_window_size`, add badge | No |
-| **Codex direct JSONL parsing** | Medium — eliminates CodexBarCLI dependency and 2-min delay | Medium — `~/.codex/sessions/**/rollout-*.jsonl` parsing | No |
-| **`CC_SL_PATH_DEPTH` option** | Low — control abbreviation depth | Low — pass depth parameter to awk | No |
-| **Plugin marketplace distribution** | High — one-line install with `/plugin install` | High — requires Claude Code plugin format | No |
-| **Gemini native hook** | Low — replace shell wrapper with native hook | Unknown — `~/.gemini/settings.json` support unconfirmed | No |
-| **256-color theme variant** | Medium | Medium — separate palette with `\033[38;5;Nm` codes | No |
-| **README screenshots/GIF** | Medium — first-time users need visual preview | Low — requires terminal recording tool (e.g. `vhs`) | No |
+| Item | Status | Notes |
+|------|--------|-------|
+| **Truecolor detection + 256-color fallback** | ✅ Done (v2.3.0) | Auto-detects `$COLORTERM` / `$TERM_PROGRAM`; nearest-neighbor 256-color palette |
+| **1M context model badge** | ✅ Done (v2.3.0) | `·1M` suffix when `context_window_size ≥ 1M` |
+| **Context token count display** | ✅ Done (v2.3.0) | `(106k/200k)` / `(530k/1.0M)` after percentage |
+| **`CC_SL_PATH_DEPTH` option** | ✅ Done (v2.3.0) | awk depth parameter, default=1 |
+| **Codex direct JSONL parsing** | ❌ Planned | `~/.codex/sessions/**/rollout-*.jsonl`; eliminate CodexBarCLI dependency |
+| **Plugin marketplace distribution** | ❌ Planned | Requires Claude Code plugin format; high complexity |
+| **Gemini native hook** | ❌ Planned | Test `~/.gemini/settings.json` SessionStart hook |
+| **README screenshots/GIF** | ❌ Planned | Requires `vhs` (Charm) or `asciinema` |
