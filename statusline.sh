@@ -1,5 +1,5 @@
 #!/bin/bash
-# Claude Code StatusLine v2.0.0 — Catppuccin Mocha 双行布局
+# Claude Code StatusLine v2.1.0 — Catppuccin Mocha 双行布局
 #
 # 环境变量（均有默认值，无需配置即可使用）：
 #   CC_SL_LINES=1|2          单行/双行（默认 2）
@@ -12,7 +12,7 @@
 #   CC_SL_RL_DANGER_PCT=85   速率限制红色阈值
 #   CC_SL_PACE_THRESHOLD=5   Pace delta 最小显示幅度（百分点）
 
-VERSION="2.0.0"
+VERSION="2.1.0"
 [ "${1:-}" = "--version" ] && echo "statusline v${VERSION}" && exit 0
 
 input=$(cat)
@@ -44,27 +44,32 @@ RL_DANGER=${CC_SL_RL_DANGER_PCT:-85}
 PACE_THRESHOLD=${CC_SL_PACE_THRESHOLD:-5}
 
 # ── 单次 jq 调用提取全部字段（8x → 1x，性能提升 ~7×） ──
-# 使用 \x01（ASCII SOH）作为分隔符，避免 IFS=tab 将连续空字段折叠的问题
+# Bug fix: jq 会静默丢弃源码字符串字面量中的控制字符（< 0x20）。
+# 用 --arg s "$(printf '\001')" 将 SOH 字符作为 jq 变量传入，
+# 确保 join($s) 正确输出字段分隔符。
+# floor 应用于所有整数字段，防止 JSON 浮点精度问题透传到显示层。
 IFS=$'\x01' read -r MODEL DIR CTX_PCT RL5H RL5H_RESET RL7D \
   COST_USD DURATION_MS LINES_ADDED LINES_REMOVED \
   VIM_MODE AGENT_NAME EFFORT_LEVEL IS_WORKTREE WORKTREE_NAME \
-  < <(echo "$input" | jq -r '[
-    (.model.display_name // "Unknown"),
-    (.workspace.current_dir // ""),
-    ((.context_window.used_percentage // 0) | floor | tostring),
-    ((.rate_limits.five_hour.used_percentage // "") | tostring),
-    ((.rate_limits.five_hour.resets_at // 0) | tostring),
-    ((.rate_limits.seven_day.used_percentage // "") | tostring),
-    ((.cost.total_cost_usd // 0) | tostring),
-    ((.cost.total_duration_ms // 0) | tostring),
-    ((.cost.total_lines_added // 0) | tostring),
-    ((.cost.total_lines_removed // 0) | tostring),
-    (.vim.mode // ""),
-    (.agent.name // ""),
-    (.effort.level // ""),
-    (if (.worktree.is_worktree // false) then "1" else "0" end),
-    (.worktree.name // "")
-  ] | join("")')
+  < <(echo "$input" | jq -r \
+    --arg s "$(printf '\001')" \
+    '[
+      (.model.display_name // "Unknown"),
+      (.workspace.current_dir // ""),
+      ((.context_window.used_percentage // 0) | floor | tostring),
+      ((.rate_limits.five_hour.used_percentage  // "") | if type == "number" then floor | tostring else . end),
+      ((.rate_limits.five_hour.resets_at        // 0)  | floor | tostring),
+      ((.rate_limits.seven_day.used_percentage  // "") | if type == "number" then floor | tostring else . end),
+      ((.cost.total_cost_usd      // 0) | tostring),
+      ((.cost.total_duration_ms   // 0) | floor | tostring),
+      ((.cost.total_lines_added   // 0) | floor | tostring),
+      ((.cost.total_lines_removed // 0) | floor | tostring),
+      (.vim.mode    // ""),
+      (.agent.name  // ""),
+      (.effort.level // ""),
+      (if (.worktree.is_worktree // false) then "1" else "0" end),
+      (.worktree.name // "")
+    ] | join($s)')
 
 # ── 上下文进度条（阈值变色） ──
 CTX_PCT_INT=${CTX_PCT%%.*}
@@ -265,7 +270,7 @@ fi
 
 # ── 行组装 ──
 LINE1="${Mauve}${MODEL}${RESET} ${SEP} ${CTX_BAR_COLOR}${CTX_BAR}${RESET} ${Sapphire}${CTX_PCT_INT}%${RESET}${RL5H_SECTION}${RL7D_SECTION} ${SEP} ${Lavender}${MINS}m${SECS}s${RESET}${COST_SECTION}"
-# Line 2: Starship 缩略路径 + Git + 可选徽章（模式/agent/vim/effort/代码量）
+# Line 2: Starship 缩略路径 + Git + 可选徽章（vim/agent/effort/worktree/代码量）
 LINE2="${Blue}${ABBREV_PATH}${RESET}${GIT_SECTION}${WORKTREE_BADGE}${AGENT_BADGE}${VIM_BADGE}${EFFORT_BADGE}${CODE_STAT}"
 
 # ── 输出：CC_SL_LINES=1 → 单行，默认 2 → 双行 ──

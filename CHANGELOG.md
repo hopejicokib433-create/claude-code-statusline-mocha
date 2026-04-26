@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.0] - 2026-04-26
+
+### Fixed
+- **jq control byte bug**: jq silently strips literal bytes `< 0x20` from inline string literals — the SOH delimiter in `join("\x01")` was being stripped, causing all 15 fields to concatenate into the MODEL variable and produce garbled output like `Sonnet 4.6/Users/wenbin/…727.000000001777…`. Fix: pass SOH via `--arg s "$(printf '\001')"` so jq receives it as an argument value (not a literal), which is transmitted correctly.
+- **Floating-point precision**: applied `floor | tostring` to all integer jq fields (duration_ms, lines_added/removed, rate limit percentages) to prevent IEEE 754 precision leakage (`727.0000000000000011777195200` → `727`)
+
 ## [2.0.0] - 2026-04-26
 
 ### Added
