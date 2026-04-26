@@ -177,13 +177,38 @@ fi
 
 IFS='|' read -r BRANCH STAGED MODIFIED < "$CACHE_FILE"
 
-# ── 项目名（截断 18 字符） ──
-PROJECT_FULL="${DIR##*/}"
-if [ ${#PROJECT_FULL} -gt 18 ]; then
-  PROJECT="${PROJECT_FULL:0:15}…"
-else
-  PROJECT="$PROJECT_FULL"
-fi
+# ── Starship 风格路径缩略（中间各段取首字母，最后一段保留完整） ──
+# /Users/wenbin/mycode/claude-code-statusline-mocha → ~/m/claude-code-statusline-mocha
+# 注意：不能用 ${var/#$HOME/~}，因为 $HOME 含 / 会被 bash 解析为分隔符
+#       改用 ${var#$HOME} 做前缀移除，再手动拼接 ~
+_abbrev_path() {
+  local full="$1"
+  local stripped="${full#$HOME}"
+  local path
+  [ "$stripped" != "$full" ] && path="~${stripped}" || path="$full"
+  [ -z "$path" ] && { echo "/"; return; }
+
+  # 路径较短则直接返回，无需缩略
+  if [ ${#path} -le 28 ]; then
+    echo "$path"
+    return
+  fi
+
+  # awk 缩略：每个中间段取首字母，最后一段完整保留
+  printf '%s' "$path" | awk -F/ '{
+    n = NF
+    for (i=1; i<=n; i++) {
+      seg = $i
+      if      (i==1) printf "%s",  seg
+      else if (i==n) printf "/%s", seg
+      else if (seg)  printf "/%s", substr(seg,1,1)
+      else           printf "/"
+    }
+    printf "\n"
+  }'
+}
+
+ABBREV_PATH=$(_abbrev_path "$DIR")
 
 # ── Git 区段（分支 + staged + modified） ──
 GIT_SECTION=""
@@ -240,11 +265,13 @@ fi
 
 # ── 行组装 ──
 LINE1="${Mauve}${MODEL}${RESET} ${SEP} ${CTX_BAR_COLOR}${CTX_BAR}${RESET} ${Sapphire}${CTX_PCT_INT}%${RESET}${RL5H_SECTION}${RL7D_SECTION} ${SEP} ${Lavender}${MINS}m${SECS}s${RESET}${COST_SECTION}"
-LINE2="${Blue}${PROJECT}${RESET}${GIT_SECTION}${WORKTREE_BADGE}${AGENT_BADGE}${VIM_BADGE}${EFFORT_BADGE}${CODE_STAT}"
+# Line 2: Starship 缩略路径 + Git + 可选徽章（模式/agent/vim/effort/代码量）
+LINE2="${Blue}${ABBREV_PATH}${RESET}${GIT_SECTION}${WORKTREE_BADGE}${AGENT_BADGE}${VIM_BADGE}${EFFORT_BADGE}${CODE_STAT}"
 
 # ── 输出：CC_SL_LINES=1 → 单行，默认 2 → 双行 ──
+# 单行：路径放在最右侧，左侧优先保留核心指标（速率/上下文/费用）
 if [ "$SL_LINES" = "1" ]; then
-  echo -e "${LINE1} ${SEP} ${Blue}${PROJECT}${RESET}${GIT_SECTION}"
+  echo -e "${LINE1} ${SEP} ${Blue}${ABBREV_PATH}${RESET}${GIT_SECTION}"
 else
   echo -e "$LINE1"
   echo -e "$LINE2"
