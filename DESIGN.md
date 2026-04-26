@@ -154,7 +154,35 @@ Each invocation of `jq` (or any external command) requires:
 
 On macOS, a single jq call takes ~4–5ms. The original script called jq 8 times: **~35–40ms** wasted on process management overhead. Merging into one call brings the overhead to ~5ms — a ~7× speedup.
 
-### The SOH Delimiter Strategy
+### The Multi-Line Output Strategy (v2.2.0)
+
+All 15 values are extracted in a single jq call. jq's comma-expression outputs one value per line; bash reads each line into a separate variable with a compound `{ read; read; ... }` block:
+
+```bash
+{
+  IFS= read -r MODEL
+  IFS= read -r DIR
+  IFS= read -r CTX_PCT
+  # ... 12 more
+} < <(echo "$input" | jq -r '
+  (.model.display_name // "Unknown"),
+  (.workspace.current_dir // ""),
+  ((.context_window.used_percentage // 0) | floor | tostring),
+  ...')
+```
+
+**Why this is better than the previous SOH delimiter approach:**
+
+- **No delimiter at all** — each field is on its own line; bash reads line-by-line. No control byte to worry about.
+- **Empty fields are preserved** — jq outputs an empty line for `""`, and `IFS= read -r VAR` on an empty line sets `VAR=""`. No IFS whitespace collapsing (that was `@tsv`'s problem).
+- **Bash 3.2 compatible** — `{ read; read; }` compound command with `< <(...)` process substitution works in bash 3.2.
+- **Single jq fork** — jq's comma expression (`,`) outputs multiple values in a single invocation. No performance regression vs. `join($s)`.
+
+The previous approach (`join($s)` with SOH via `--arg s "$(printf '\001')"`) was correct in theory but fragile in practice: whether the SOH byte survived the subprocess environment depended on the bash version and how Claude Code spawned the child process.
+
+### The (Abandoned) SOH Delimiter Strategy
+
+*(Documented for reference — replaced in v2.2.0)*
 
 All 15 values are extracted in a single jq call by joining them with a delimiter character, then splitting in bash via `IFS`:
 
@@ -690,6 +718,18 @@ Requires bash, POSIX tools, and ANSI truecolor — none of which are native to W
 ---
 
 ## 11. Critical Engineering Bugs & Fixes
+
+### Bug 4 (v2.2.0): SOH Byte Not Reliably Transmitted in Subprocess Environment
+
+**Version fixed:** v2.2.0 (2026-04-26)
+
+**Symptom:** Garbled output persists in the real Claude Code status bar even after the `--arg s "$(printf '\001')"` fix in v2.1.0. The test `echo '{}' | bash statusline.sh` works correctly, but the live status bar shows all fields concatenated.
+
+**Root cause:** The `$(printf '\001')` command substitution produces the SOH byte correctly in an interactive terminal, but when Claude Code spawns the script as a subprocess, the byte may be stripped or mishandled by the intermediate process layers. The specific mechanism varies by bash version and how the parent process sets up the child's stdio.
+
+**Fix:** Switch to line-per-field output — jq outputs each value on its own line; bash reads each line with a separate `IFS= read -r` command. No delimiter byte is needed at all.
+
+---
 
 ### Bug 1: jq Silently Strips Control Bytes from String Literals
 

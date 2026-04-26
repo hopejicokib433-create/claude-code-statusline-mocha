@@ -1,5 +1,5 @@
 #!/bin/bash
-# Claude Code StatusLine v2.1.0 — Catppuccin Mocha 双行布局
+# Claude Code StatusLine v2.2.0 — Catppuccin Mocha 双行布局
 #
 # 环境变量（均有默认值，无需配置即可使用）：
 #   CC_SL_LINES=1|2          单行/双行（默认 2）
@@ -11,11 +11,15 @@
 #   CC_SL_RL_WARN_PCT=60     速率限制黄色阈值
 #   CC_SL_RL_DANGER_PCT=85   速率限制红色阈值
 #   CC_SL_PACE_THRESHOLD=5   Pace delta 最小显示幅度（百分点）
+#   CC_SL_DEBUG=1            将原始 JSON payload 写入 /tmp/statusline-debug.json
 
-VERSION="2.1.0"
+VERSION="2.2.0"
 [ "${1:-}" = "--version" ] && echo "statusline v${VERSION}" && exit 0
 
 input=$(cat)
+
+# Debug 模式：捕获真实 Claude Code payload 便于排查
+[ "${CC_SL_DEBUG:-0}" = "1" ] && echo "$input" > /tmp/statusline-debug.json
 
 # ── Catppuccin Mocha 配色（Truecolor ANSI） ──
 Mauve='\033[38;2;203;166;247m'    # 模型名
@@ -43,33 +47,54 @@ RL_WARN=${CC_SL_RL_WARN_PCT:-60}
 RL_DANGER=${CC_SL_RL_DANGER_PCT:-85}
 PACE_THRESHOLD=${CC_SL_PACE_THRESHOLD:-5}
 
-# ── 单次 jq 调用提取全部字段（8x → 1x，性能提升 ~7×） ──
-# Bug fix: jq 会静默丢弃源码字符串字面量中的控制字符（< 0x20）。
-# 用 --arg s "$(printf '\001')" 将 SOH 字符作为 jq 变量传入，
-# 确保 join($s) 正确输出字段分隔符。
+# ── 单次 jq 调用提取全部字段（每字段一行，无需分隔符）──
+# 用逗号表达式让 jq 每字段输出一行，bash 用多个 read 逐行读取。
+# 此方案完全避免 IFS/分隔符问题，天然 bash 3.2 兼容。
 # floor 应用于所有整数字段，防止 JSON 浮点精度问题透传到显示层。
-IFS=$'\x01' read -r MODEL DIR CTX_PCT RL5H RL5H_RESET RL7D \
-  COST_USD DURATION_MS LINES_ADDED LINES_REMOVED \
-  VIM_MODE AGENT_NAME EFFORT_LEVEL IS_WORKTREE WORKTREE_NAME \
-  < <(echo "$input" | jq -r \
-    --arg s "$(printf '\001')" \
-    '[
-      (.model.display_name // "Unknown"),
-      (.workspace.current_dir // ""),
-      ((.context_window.used_percentage // 0) | floor | tostring),
-      ((.rate_limits.five_hour.used_percentage  // "") | if type == "number" then floor | tostring else . end),
-      ((.rate_limits.five_hour.resets_at        // 0)  | floor | tostring),
-      ((.rate_limits.seven_day.used_percentage  // "") | if type == "number" then floor | tostring else . end),
-      ((.cost.total_cost_usd      // 0) | tostring),
-      ((.cost.total_duration_ms   // 0) | floor | tostring),
-      ((.cost.total_lines_added   // 0) | floor | tostring),
-      ((.cost.total_lines_removed // 0) | floor | tostring),
-      (.vim.mode    // ""),
-      (.agent.name  // ""),
-      (.effort.level // ""),
-      (if (.worktree.is_worktree // false) then "1" else "0" end),
-      (.worktree.name // "")
-    ] | join($s)')
+{
+  IFS= read -r MODEL
+  IFS= read -r DIR
+  IFS= read -r CTX_PCT
+  IFS= read -r RL5H
+  IFS= read -r RL5H_RESET
+  IFS= read -r RL7D
+  IFS= read -r COST_USD
+  IFS= read -r DURATION_MS
+  IFS= read -r LINES_ADDED
+  IFS= read -r LINES_REMOVED
+  IFS= read -r VIM_MODE
+  IFS= read -r AGENT_NAME
+  IFS= read -r EFFORT_LEVEL
+  IFS= read -r IS_WORKTREE
+  IFS= read -r WORKTREE_NAME
+} < <(echo "$input" | jq -r '
+  (.model.display_name // "Unknown"),
+  (.workspace.current_dir // ""),
+  ((.context_window.used_percentage // 0) | floor | tostring),
+  ((.rate_limits.five_hour.used_percentage  // "") | if type == "number" then floor | tostring else . end),
+  ((.rate_limits.five_hour.resets_at        // 0)  | floor | tostring),
+  ((.rate_limits.seven_day.used_percentage  // "") | if type == "number" then floor | tostring else . end),
+  ((.cost.total_cost_usd      // 0) | tostring),
+  ((.cost.total_duration_ms   // 0) | floor | tostring),
+  ((.cost.total_lines_added   // 0) | floor | tostring),
+  ((.cost.total_lines_removed // 0) | floor | tostring),
+  (.vim.mode    // ""),
+  (.agent.name  // ""),
+  (.effort.level // ""),
+  (if (.worktree.is_worktree // false) then "1" else "0" end),
+  (.worktree.name // "")')
+
+# ── resets_at 时间戳单位自适应（秒 or 毫秒）──
+# Claude Code 某些版本以毫秒发送 resets_at（13位数），需除以 1000 转换为秒
+_to_epoch_secs() {
+  local ts="${1:-0}"
+  # 13位及以上视为毫秒（2001年后的毫秒时间戳均 > 1e12）
+  if [ "${#ts}" -ge 13 ] 2>/dev/null; then
+    echo $(( ts / 1000 ))
+  else
+    echo "$ts"
+  fi
+}
 
 # ── 上下文进度条（阈值变色） ──
 CTX_PCT_INT=${CTX_PCT%%.*}
@@ -105,8 +130,8 @@ if [ -n "$RL5H" ] && [ "$RL5H" != "null" ] && [ "$RL5H" != "" ]; then
   PACE_DISPLAY=""
   if [ "$SHOW_PACE" = "1" ] && [ -n "$RL5H_RESET" ] && [ "$RL5H_RESET" != "0" ]; then
     NOW=$(date +%s)
-    RESET_INT=${RL5H_RESET%%.*}
-    ELAPSED=$(( NOW - (RESET_INT - 18000) ))
+    RESET_SECS=$(_to_epoch_secs "$RL5H_RESET")
+    ELAPSED=$(( NOW - (RESET_SECS - 18000) ))
     if [ "$ELAPSED" -gt 0 ] && [ "$ELAPSED" -le 18000 ] 2>/dev/null; then
       EXPECTED=$(( ELAPSED * 100 / 18000 ))
       DELTA=$(( RL5H_INT - EXPECTED ))
@@ -125,8 +150,8 @@ if [ -n "$RL5H" ] && [ "$RL5H" != "null" ] && [ "$RL5H" != "" ]; then
   RESET_COUNTDOWN=""
   if [ "$SHOW_RESET" = "1" ] && [ -n "$RL5H_RESET" ] && [ "$RL5H_RESET" != "0" ]; then
     NOW=$(date +%s)
-    RESET_INT=${RL5H_RESET%%.*}
-    SECS_LEFT=$(( RESET_INT - NOW ))
+    RESET_SECS=$(_to_epoch_secs "$RL5H_RESET")
+    SECS_LEFT=$(( RESET_SECS - NOW ))
     if [ "$SECS_LEFT" -gt 0 ] 2>/dev/null; then
       HRS_LEFT=$(( SECS_LEFT / 3600 ))
       MINS_LEFT=$(( (SECS_LEFT % 3600) / 60 ))
@@ -193,13 +218,11 @@ _abbrev_path() {
   [ "$stripped" != "$full" ] && path="~${stripped}" || path="$full"
   [ -z "$path" ] && { echo "/"; return; }
 
-  # 路径较短则直接返回，无需缩略
   if [ ${#path} -le 28 ]; then
     echo "$path"
     return
   fi
 
-  # awk 缩略：每个中间段取首字母，最后一段完整保留
   printf '%s' "$path" | awk -F/ '{
     n = NF
     for (i=1; i<=n; i++) {
@@ -269,12 +292,11 @@ if [ "${LINES_ADDED:-0}" -gt 0 ] 2>/dev/null || [ "${LINES_REMOVED:-0}" -gt 0 ] 
 fi
 
 # ── 行组装 ──
-LINE1="${Mauve}${MODEL}${RESET} ${SEP} ${CTX_BAR_COLOR}${CTX_BAR}${RESET} ${Sapphire}${CTX_PCT_INT}%${RESET}${RL5H_SECTION}${RL7D_SECTION} ${SEP} ${Lavender}${MINS}m${SECS}s${RESET}${COST_SECTION}"
-# Line 2: Starship 缩略路径 + Git + 可选徽章（vim/agent/effort/worktree/代码量）
+# 字段顺序：模型 → 配额(最重要) → 上下文 → 时长 → 费用
+LINE1="${Mauve}${MODEL}${RESET}${RL5H_SECTION}${RL7D_SECTION} ${SEP} ${CTX_BAR_COLOR}${CTX_BAR}${RESET} ${Sapphire}${CTX_PCT_INT}%${RESET} ${SEP} ${Lavender}${MINS}m${SECS}s${RESET}${COST_SECTION}"
 LINE2="${Blue}${ABBREV_PATH}${RESET}${GIT_SECTION}${WORKTREE_BADGE}${AGENT_BADGE}${VIM_BADGE}${EFFORT_BADGE}${CODE_STAT}"
 
 # ── 输出：CC_SL_LINES=1 → 单行，默认 2 → 双行 ──
-# 单行：路径放在最右侧，左侧优先保留核心指标（速率/上下文/费用）
 if [ "$SL_LINES" = "1" ]; then
   echo -e "${LINE1} ${SEP} ${Blue}${ABBREV_PATH}${RESET}${GIT_SECTION}"
 else

@@ -3,63 +3,109 @@
 A dual-line status bar for [Claude Code](https://claude.ai/code) that shows real-time session metrics, quota pace, and project context — all in the [Catppuccin Mocha](https://github.com/catppuccin/catppuccin) color palette.
 
 ```
-Sonnet 4.6 │ ██████░░░░ 53% │ ↑5h:36% ⇣24p% (重置 2h0m) │ ↑7d:12% │ 38m50s │ $2.05
+Sonnet 4.6 │ ↑5h:36% ⇣24p% (重置 2h0m) │ ↑7d:12% │ ██████░░░░ 53% │ 38m50s │ $2.05
 ~/m/claude-code-statusline-mocha │ main +3 ~15 │ ⚡reviewer │ vim:INSERT │ effort:high │ +57/-10
 ```
 
-**Line 1** — runtime metrics: model, context window, 5h/7d rate limits with pace indicator, session duration and cost  
-**Line 2** — project context: abbreviated path, git branch, agent/vim/effort badges, code line delta
+> **How it works:** Claude Code pipes a JSON payload to `~/.claude/statusline.sh` on every refresh. The script parses all 15 fields in a single `jq` call, builds two lines with Catppuccin Mocha 24-bit colors, and writes them to stdout. Claude Code renders them in its built-in terminal view. Your `.zshrc`, Starship, oh-my-zsh, and other shell config have zero effect on this script.
 
-> **How it works:** Claude Code pipes a JSON payload to `~/.claude/statusline.sh` on every refresh. The script parses all fields in a single `jq` call (~5ms), builds two lines with ANSI 24-bit color, and writes them to stdout. Claude Code renders them in its built-in terminal view. Your `.zshrc`, Starship, oh-my-zsh, and other shell config have zero effect on this script.
+---
+
+## Field Reference — Annotated Diagram
+
+### Line 1 — Runtime Metrics
+
+```
+ Sonnet 4.6 │ ↑5h:36% ⇣24p% (重置 2h0m) │ ↑7d:12% │ ██████░░░░ 53% │ 38m50s │ $2.05
+     ①           ②       ③        ④          ⑤           ⑥        ⑦      ⑧       ⑨
+```
+
+| # | Example | What it means | Always shown? |
+|---|---------|---------------|:---:|
+| ① | `Sonnet 4.6` | **Model name** — which Claude model is active | Yes |
+| ② | `↑5h:36%` | **5-hour quota used** — percentage of your 5h rolling token budget consumed | Only when data available |
+| ③ | `⇣24p%` / `⇡24p%` | **Pace delta** — ⇣ green means you're 24 points *under* sustainable pace (quota will last); ⇡ red means 24 points *over* (may run out early) | Only when |delta| ≥ 5pp |
+| ④ | `(重置 2h0m)` | **Reset countdown** — time until the 5h window resets and quota refreshes | Only when quota data available |
+| ⑤ | `↑7d:12%` | **7-day quota used** — percentage of your weekly token budget | Only when data available |
+| ⑥ | `██████░░░░` | **Context window bar** — 10 blocks showing how full the current conversation is; color changes green→yellow→red as it fills | Yes |
+| ⑦ | `53%` | **Context percentage** — exact number for the bar above | Yes |
+| ⑧ | `38m50s` | **Session duration** — wall-clock time since Claude Code started | Yes |
+| ⑨ | `$2.05` | **Accumulated cost** — total API cost for this session | Only when > $0.00 |
+
+**Context bar color thresholds** (configurable):
+
+```
+░░░░░░░░░░  0–69%  → green   (healthy)
+░░░░░░░░░░ 70–89%  → yellow  (warning)
+░░░░░░░░░░ 90–100% → red     (critical)
+```
+
+**Pace delta — how to read it:**
+
+```
+delta = used% − (elapsed_seconds / 18000) × 100
+
+  ⇣24p%  You've used 24 percentage points LESS than the clock-proportional rate.
+         Quota will comfortably last the full 5-hour window at this pace.
+
+  ⇡24p%  You've used 24 percentage points MORE than sustainable.
+         Quota may run out before the 5-hour window ends.
+
+  (hidden)  |delta| < 5 — normal fluctuation, not worth showing.
+```
+
+---
+
+### Line 2 — Project Context
+
+```
+ ~/m/project │ main +3 ~15 │ [wt:feat] │ ⚡reviewer │ vim:INSERT │ effort:high │ +57/-10
+      ⑩         ⑪   ⑫  ⑬      ⑭             ⑮            ⑯           ⑰          ⑱
+```
+
+| # | Example | What it means | Always shown? |
+|---|---------|---------------|:---:|
+| ⑩ | `~/m/project` | **Current directory** — Starship-style abbreviation: intermediate segments → first letter, leaf preserved | Yes |
+| ⑪ | `main` | **Git branch** — current branch name (truncated at 16 chars) | Only in git repos |
+| ⑫ | `+3` (green) | **Staged files** — files added to the index (`git add`) | Only when > 0 |
+| ⑬ | `~15` (yellow) | **Modified files** — files changed but not yet staged | Only when > 0 |
+| ⑭ | `[wt:feat]` | **Worktree name** — shown only when running inside a git worktree | Only in worktrees |
+| ⑮ | `⚡reviewer` | **Agent name** — shown only when Claude Code launched with `--agent <name>` | Only in agent mode |
+| ⑯ | `vim:INSERT` | **Vim mode** — INSERT (green), VISUAL (pink), NORMAL (yellow) | Only when Vim mode active |
+| ⑰ | `effort:high` | **Effort level** — shown only for `high`, `xhigh`, or `max` | Only for high effort |
+| ⑱ | `+57/-10` | **Code delta** — lines added (green) / removed (red) in this session | Only when > 0 |
+
+**Path abbreviation example:**
+
+```
+/Users/wenbin/mycode/jupyter/007/project
+          ↓
+~/m/j/0/project
+          ↑
+          Each intermediate segment → its first character.
+          The last segment is always kept in full.
+          Paths ≤ 28 characters are shown as-is.
+```
 
 ---
 
 ## Features
 
-### Line 1 — Runtime Metrics
-
-| Field | Example | Description |
-|-------|---------|-------------|
-| **Model name** | `Sonnet 4.6` | From `model.display_name` in the JSON payload |
-| **Context bar** | `██████░░░░ 53%` | 10-block progress bar; green < 60%, yellow ≥ 60%, red ≥ 85% |
-| **5h rate limit** | `↑5h:36%` | Percentage of 5-hour quota consumed; color-coded same as context bar |
-| **Pace delta** | `⇣24p%` (green) / `⇡24p%` (red) | How much faster or slower you're burning quota vs. the sustainable linear rate |
-| **Reset countdown** | `(重置 2h0m)` | Time until the 5-hour window resets |
-| **7d rate limit** | `↑7d:12%` | 7-day quota consumed |
-| **Duration** | `38m50s` | Total session wall-clock time |
-| **Cost** | `$2.05` | Accumulated API cost; hidden when $0.00 |
-
-### Line 2 — Project Context
-
-| Field | Example | Description |
-|-------|---------|-------------|
-| **Abbreviated path** | `~/m/claude-code-statusline-mocha` | Starship-style: intermediate segments → first character; leaf preserved |
-| **Git branch** | `main` | Current branch, truncated to 16 characters if long |
-| **Staged files** | `+3` (green) | Number of files staged for commit |
-| **Modified files** | `~15` (yellow) | Number of unstaged modified files |
-| **Worktree badge** | `[wt:feature-x]` | Shown only in git worktree sessions |
-| **Agent badge** | `⚡reviewer` | Shown only when Claude Code launched with `--agent <name>` |
-| **Vim mode** | `vim:INSERT` | Color-coded: INSERT=green, VISUAL=pink, NORMAL=yellow |
-| **Effort badge** | `effort:high` | Shown only for `high`, `xhigh`, or `max` effort levels |
-| **Code delta** | `+57/-10` | Lines added (green) / removed (red) in this session |
-
-### Pace Delta — What It Means
-
-The `⇡/⇣` indicator answers: *"Am I burning quota faster or slower than the clock?"*
-
-The 5-hour window is 18,000 seconds. If you've used 60% of quota but only 20% of the time has elapsed (1 hour), you're burning 3× faster than sustainable.
-
-```
-delta = used_pct − (elapsed_seconds / 18000) × 100
-```
-
-| Display | Color | Meaning |
-|---------|-------|---------|
-| `⇡24p%` | Red | 24 percentage points over the sustainable pace — quota may run out early |
-| `⇣24p%` | Green | 24 percentage points under pace — quota will last the full window |
-| (hidden) | — | Delta within ±5pp — normal fluctuation |
-
-Credit: algorithm from [Astro-Han/claude-lens](https://github.com/Astro-Han/claude-lens).
+| Feature | Description |
+|---------|-------------|
+| **Dual-line layout** | Line 1: quota & context · Line 2: project context |
+| **Pace delta `⇡/⇣`** | Shows if quota is burning faster (⇡ red) or slower (⇣ green) than the sustainable rate |
+| **Reset countdown** | Time until 5h window resets: `(重置 2h30m)` |
+| **7-day rate limit** | Second rate-limit tier displayed alongside 5h |
+| **Context bar** | `██████░░░░ 53%` with green/yellow/red thresholds |
+| **Vim mode** | INSERT (green) · VISUAL (pink) · NORMAL (yellow) |
+| **Agent badge** | `⚡agent-name` when running with `--agent` |
+| **Effort badge** | `effort:high/xhigh/max` |
+| **Worktree badge** | `[wt:name]` in git worktree sessions |
+| **Single-line mode** | `CC_SL_LINES=1` for narrow terminals |
+| **Gemini banner** | Live quota display on `g` alias |
+| **Codex banner** | Cached quota display on `cx` alias |
+| **~5ms execution** | Single `jq` call; multi-line output avoids all IFS/delimiter issues |
 
 ---
 
@@ -94,12 +140,10 @@ Then **restart Claude Code**.
 ### Manual install
 
 ```bash
-# Copy scripts
 install -m 755 statusline.sh    ~/.claude/statusline.sh
 install -m 755 gemini-banner.sh ~/.claude/gemini-banner.sh
 install -m 755 codex-banner.sh  ~/.claude/codex-banner.sh
 
-# Merge settings (preserves existing settings)
 jq '. + {
   "statusLine": {"type":"command","command":"~/.claude/statusline.sh","padding":2},
   "refreshInterval": 60
@@ -108,96 +152,86 @@ jq '. + {
 
 ### Gemini / Codex banners (optional)
 
-These are shell wrapper functions, not part of the Claude Code statusline. They print a usage summary line when you launch Gemini CLI or Codex CLI.
-
 Add to `~/.zshrc`:
 
 ```bash
-# Gemini CLI wrapper — prints live quota on launch (~2.5s API call)
 unalias g 2>/dev/null
 g() { ~/.claude/gemini-banner.sh; gemini "$@"; }
 
-# Codex CLI wrapper — prints cached quota on launch (1h stale-while-revalidate cache)
 unalias cx 2>/dev/null
 cx() { ~/.claude/codex-banner.sh; codex "$@"; }
 ```
 
 > **Codex banner note:** Requires [CodexBar](https://github.com/example/CodexBar) at  
 > `~/Downloads/CodexBar.app/Contents/Helpers/CodexBarCLI`. Edit the `CODEXBAR` variable in  
-> `codex-banner.sh` if installed elsewhere. The banner still works without CodexBar — it just won't show usage data.
+> `codex-banner.sh` if installed elsewhere.
 
 ---
 
 ## Configuration
 
-All options are environment variables with defaults. No config file is needed.
-
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `CC_SL_LINES` | `2` | `1` = single-line mode (narrow terminals), `2` = dual-line |
-| `CC_SL_SHOW_PACE` | `1` | `0` = hide pace delta indicator |
+| `CC_SL_LINES` | `2` | `1` = single-line (narrow terminal), `2` = dual-line |
+| `CC_SL_SHOW_PACE` | `1` | `0` = hide pace delta |
 | `CC_SL_SHOW_RESET` | `1` | `0` = hide reset countdown |
 | `CC_SL_SHOW_VIM` | `1` | `0` = hide Vim mode badge |
 | `CC_SL_SHOW_AGENT` | `1` | `0` = hide Agent badge |
 | `CC_SL_SHOW_EFFORT` | `1` | `0` = hide Effort badge |
-| `CC_SL_RL_WARN_PCT` | `60` | Rate limit / context bar yellow threshold (%) |
-| `CC_SL_RL_DANGER_PCT` | `85` | Rate limit / context bar red threshold (%) |
+| `CC_SL_RL_WARN_PCT` | `60` | Yellow threshold for context bar and rate limits |
+| `CC_SL_RL_DANGER_PCT` | `85` | Red threshold |
 | `CC_SL_PACE_THRESHOLD` | `5` | Minimum |delta| in percentage points to show pace indicator |
+| `CC_SL_DEBUG` | `0` | `1` = write raw Claude Code JSON payload to `/tmp/statusline-debug.json` |
 
-**Setting permanently** — add to `~/.zshrc` (Claude Code inherits these from its environment):
 ```bash
-export CC_SL_LINES=1            # narrow terminal
-export CC_SL_RL_WARN_PCT=50     # warn earlier
-export CC_SL_SHOW_VIM=0         # hide vim badge
-```
+# Permanent — add to ~/.zshrc
+export CC_SL_LINES=1
+export CC_SL_RL_WARN_PCT=50
 
-**Per-session override:**
-```bash
+# Per-session
 CC_SL_LINES=1 claude .
+
+# Diagnose garbled output — capture real payload
+CC_SL_DEBUG=1 claude .
+# then inspect: cat /tmp/statusline-debug.json | jq .
 ```
 
 ---
 
 ## Color Scheme
 
-All colors are from the [Catppuccin Mocha](https://github.com/catppuccin/catppuccin) palette using 24-bit ANSI truecolor (`\033[38;2;R;G;Bm`).
+All colors are [Catppuccin Mocha](https://github.com/catppuccin/catppuccin) — 24-bit truecolor (`\033[38;2;R;G;Bm`).
 
 | Color | Hex | Used for |
 |-------|-----|----------|
 | Mauve | `#cba6f7` | Model name |
 | Blue | `#89b4fa` | Project path |
 | Yellow | `#f9e2af` | Git branch, warnings, NORMAL vim mode |
-| Green | `#a6e3a1` | Healthy context/rate limit, lines added, INSERT vim mode |
-| Red | `#f38ba8` | Critical context/rate limit, lines removed, over-pace |
+| Green | `#a6e3a1` | Healthy bars, lines added, INSERT vim mode, under-pace |
+| Red | `#f38ba8` | Critical bars, lines removed, over-pace |
 | Lavender | `#b4befe` | Session duration |
 | Teal | `#94e2d5` | Session cost |
 | Sapphire | `#74c7ec` | Context percentage |
-| Peach | `#fab387` | Rate limit (normal range), Agent badge |
+| Peach | `#fab387` | Rate limit (normal), Agent badge |
 | Pink | `#f5c2e7` | VISUAL vim mode |
-| Surface2 | `#585b70` | Separators (`│`), secondary text |
+| Surface2 | `#585b70` | Separators `│`, secondary text |
 
-**Truecolor requirement:** These colors display correctly in the Claude Code desktop app (Electron renderer), and in all modern terminal emulators (iTerm2, Kitty, WezTerm, Alacritty, VS Code, Windows Terminal). On terminals without 24-bit truecolor support (old Terminal.app, PuTTY), colors will be approximated to the nearest 256-color value and may look different. See [DESIGN.md § Color Degradation](DESIGN.md#color-degradation--what-happens-without-truecolor) for the full compatibility matrix.
+**Truecolor requirement:** Colors display correctly in the Claude Code desktop app (Electron/xterm.js renderer), all modern terminal emulators (iTerm2, Kitty, WezTerm, Alacritty, VS Code, Windows Terminal). On terminals without 24-bit truecolor (old Terminal.app, PuTTY), colors approximate to the nearest 256-color value. See [DESIGN.md § Color Degradation](DESIGN.md#color-degradation--what-happens-without-truecolor) for details.
 
 ---
 
 ## Compatibility
 
-### Shell config (oh-my-zsh, Starship, etc.)
+**Shell config (oh-my-zsh, Starship, etc.):** Zero effect. The script runs as a subprocess of Claude Code, not inside your shell. It does not source `.zshrc`, `.bashrc`, or any shell config.
 
-**Zero effect.** The statusline script runs as a direct subprocess of Claude Code — it does not source `.zshrc`, `.bashrc`, or any shell configuration file. Your Starship prompt, oh-my-zsh themes, conda environments, and shell aliases have no effect on the statusline.
-
-### Terminal emulators
-
-The status bar is rendered **inside Claude Code's built-in terminal view** (Electron/xterm.js). When using the Claude Code desktop app, colors are always correct regardless of the terminal emulator you launch Claude Code from. When running Claude Code in a raw terminal window, colors depend on that terminal's truecolor support.
-
-### Operating systems
+**Terminal emulators:** The status bar renders inside Claude Code's built-in Electron/xterm.js view. When using the Claude Code desktop app, colors are always correct regardless of the outer terminal emulator.
 
 | Environment | Status |
 |-------------|--------|
 | macOS (bash 3.2+) | ✅ Fully supported |
 | Linux (bash 4+) | ✅ Fully supported |
-| Windows + WSL | ✅ Fully supported (follow Linux steps inside WSL) |
-| Windows native | ❌ Not supported (requires bash + POSIX tools) |
+| Windows + WSL | ✅ Follow Linux steps inside WSL |
+| Windows native | ❌ Requires bash + POSIX tools |
 
 ---
 
@@ -221,13 +255,11 @@ The status bar is rendered **inside Claude Code's built-in terminal view** (Elec
 ## Testing
 
 ```bash
-# Basic: two-line output
-echo '{}' | bash statusline.sh | wc -l     # → 2
+# Basic smoke test
+echo '{}' | bash statusline.sh | wc -l          # → 2
+CC_SL_LINES=1 bash -c 'echo "{}" | bash statusline.sh' | wc -l  # → 1
 
-# Single-line mode
-CC_SL_LINES=1 bash -c 'echo "{}" | bash statusline.sh' | wc -l   # → 1
-
-# Full realistic payload (strip ANSI for readable output)
+# Full payload with ANSI stripped
 NOW=$(date +%s)
 echo "{
   \"model\": {\"display_name\": \"Sonnet 4.6\"},
@@ -239,40 +271,36 @@ echo "{
   },
   \"cost\": {\"total_cost_usd\": 2.05, \"total_duration_ms\": 2330000,
              \"total_lines_added\": 57, \"total_lines_removed\": 10},
-  \"vim\": {\"mode\": \"INSERT\"},
-  \"agent\": {\"name\": \"reviewer\"},
-  \"effort\": {\"level\": \"high\"}
+  \"vim\": {\"mode\": \"INSERT\"}, \"agent\": {\"name\": \"reviewer\"}, \"effort\": {\"level\": \"high\"}
 }" | bash statusline.sh | sed 's/\x1b\[[0-9;]*m//g'
 
-# Over-pace scenario: used=80%, only 15 minutes remaining → large positive delta
-NOW=$(date +%s)
-echo "{\"rate_limits\":{\"five_hour\":{\"used_percentage\":80,\"resets_at\":$(($NOW+900))}}}" \
-  | bash statusline.sh | sed 's/\x1b\[[0-9;]*m//g'   # → should show ⇡ red
+# Capture real Claude Code payload for debugging
+CC_SL_DEBUG=1 claude .
+cat /tmp/statusline-debug.json | jq .
 
 # Version
-bash statusline.sh --version    # → "statusline v2.1.0"
+bash statusline.sh --version    # → "statusline v2.2.0"
 ```
 
 ---
 
 ## Technical Details
 
-See [DESIGN.md](DESIGN.md) for:
-- Complete JSON payload field reference
-- Detailed explanation of every field extraction and processing step
-- jq SOH delimiter strategy and the control byte bug fix
+See [DESIGN.md](DESIGN.md) for the complete implementation reference:
+- Full JSON payload field specification (all 15 fields, types, presence)
+- jq multi-line output strategy and why SOH delimiter was abandoned
 - Pace delta algorithm with worked examples
-- Starship path abbreviation algorithm
-- Git cache implementation
+- Starship path abbreviation with bash `${var/#$HOME/~}` bug explanation
+- Git cache cross-platform implementation (`cksum` vs `md5`/`md5sum`)
 - ANSI truecolor rendering and color degradation behavior
-- All critical engineering bugs encountered and their fixes
-- Pending optimization backlog with priorities
+- All critical engineering bugs and their root-cause fixes
+- Pending optimization backlog (P2/P3)
 
 ---
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for the local testing workflow, commit convention, and PR checklist.
+See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 

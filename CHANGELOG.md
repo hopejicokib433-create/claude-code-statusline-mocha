@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.0] - 2026-04-26
+
+### Changed
+- **Field ordering**: Rate limits (↑5h, ↑7d) now appear immediately after model name, before the context bar — quota health is more time-critical than context fill level
+- **jq extraction strategy**: Replaced `join($s)` with SOH delimiter by multi-line output (jq comma-expression + multiple bash `read` commands). This eliminates all IFS/delimiter issues and is more robust across bash versions and environments.
+
+### Added
+- **`CC_SL_DEBUG=1`**: Write raw Claude Code JSON payload to `/tmp/statusline-debug.json` for diagnosing garbled output
+- **`resets_at` millisecond detection**: Auto-detects whether `resets_at` is in seconds (10 digits) or milliseconds (13 digits) and converts correctly
+
+### Fixed
+- Garbled output in live Claude Code environment: the SOH byte passed via `--arg s "$(printf '\001')"` was not reliably transmitted across all bash/subprocess environments; switching to line-per-field output eliminates the dependency entirely
+
 ## [2.1.0] - 2026-04-26
 
 ### Fixed
