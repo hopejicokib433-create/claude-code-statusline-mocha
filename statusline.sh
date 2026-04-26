@@ -155,7 +155,7 @@ if [ "$(echo "$COST_USD > 0" | bc -l 2>/dev/null)" = "1" ]; then
 fi
 
 # ── Git 信息（5 秒缓存，按项目路径隔离） ──
-DIR_HASH=$(printf '%s' "$DIR" | md5 | cut -c1-8)
+DIR_HASH=$(printf '%s' "$DIR" | cksum | cut -d' ' -f1)
 CACHE_FILE="/tmp/statusline-git-cache-${DIR_HASH}"
 CACHE_MAX_AGE=5
 

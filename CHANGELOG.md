@@ -29,6 +29,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - Empty rate limit fields now correctly hidden (was showing `↑5h:0%` when absent)
 - `IFS=$'\x01'` delimiter prevents bash whitespace-collapsing of empty fields
+- `${var#$HOME}` replaces broken `${var/#$HOME/~}` pattern (bash delimiter parsing bug)
+- `cksum` replaces `md5` for cross-platform cache key generation (Linux compatibility)
 
 ## [1.0.0] - 2026-04-20
 
